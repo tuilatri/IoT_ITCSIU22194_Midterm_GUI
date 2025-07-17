@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IoT Control Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" />
+  <link rel="icon" href="../static/images/iu_logo.png">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    .theme--light {
+      --background: #f5f6fa;
+      --card-background: #ffffff;
+      --text-primary: #1a1a1a;
+      --text-secondary: #4a4a4a;
+      --button-background: #4a90e2;
+      --button-background-hover: #357abd;
+      --status-background: #e8f0fe;
+      --status-success: #2e7d32;
+      --status-error: #c62828;
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .theme--dark {
+      --background: #1a1a1a;
+      --card-background: #2d2d2d;
+      --text-primary: #ffffff;
+      --text-secondary: #b0b0b0;
+      --button-background: #64b5f6;
+      --button-background-hover: #4a90e2;
+      --status-background: #3a3a3a;
+      --status-success: #4caf50;
+      --status-error: #ef5350;
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    body {
+      font-family: "Inter", sans-serif;
+      background: var(--background);
+      min-height: 100vh;
+      color: var(--text-primary);
+      transition: all 0.3s ease;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      background: rgb(47, 57, 142);
+      color: #ffffff;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+
+    .header__content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 5px;
+      max-width: 1200px;
+      width: 100%;
+    }
+
+    .header__image {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .header__text {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .header__title {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .header__subtitle {
+      font-size: 1rem;
+      opacity: 0.8;
+    }
+
+    .header__actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .theme-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.2rem;
+      color: #ffffff;
+      padding: 8px;
+      transition: opacity 0.3s ease;
+    }
+
+    .theme-toggle:hover {
+      opacity: 0.8;
+    }
+
+    .main-content {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+      flex: 1;
+      width: 100%;
+    }
+
+    .dashboard {
+      background: var(--card-background);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+      width: 100%;
+    }
+
+    .dashboard__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .dashboard__title {
+      font-size: 1.8rem;
+      font-weight: 600;
+    }
+
+    .sensor-data {
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+    }
+
+    .sensor-data__item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1rem;
+    }
+
+    .sensor-data__label {
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sensor-data__value {
+      font-weight: 600;
+    }
+
+    .controls__section {
+      margin-bottom: 24px;
+    }
+
+    .controls__section-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .controls__button {
+      padding: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: var(--button-background);
+      color: #ffffff;
+      transition: background 0.3s ease, transform 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .controls__button:hover {
+      background: var(--button-background-hover);
+      transform: translateY(-2px);
+    }
+
+    .status {
+      background: var(--status-background);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 0.9rem;
+      text-align: center;
+      color: var(--text-secondary);
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      box-shadow: var(--shadow);
+    }
+
+    .footer {
+      background: var(--card-background);
+      padding: 16px;
+      text-align: center;
+      color: var(--text-secondary);
+      margin-top: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .footer__text {
+      font-size: 0.9rem;
+    }
+
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 24px;
+      border-radius: 8px;
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      transform: translateY(-20px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      z-index: 1000;
+    }
+
+    .notification.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .notification.success {
+      background: var(--status-success);
+    }
+
+    .notification.error {
+      background: var(--status-error);
+    }
+
+    @media (max-width: 1024px) {
+      .main-content {
+        max-width: 100%;
+      }
+
+      .sensor-data {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .dashboard {
+        padding: 16px;
+      }
+
+      .controls-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .header__image {
+        width: 40px;
+        height: 40px;
+      }
+
+      .header__title {
+        font-size: 1.2rem;
+      }
+
+      .header__subtitle {
+        font-size: 0.8rem;
+      }
+
+      .header__actions {
+        gap: 4px;
+      }
+
+      .theme-toggle {
+        font-size: 1rem;
+        padding: 6px;
+      }
+
+      .dashboard__title {
+        font-size: 1.5rem;
+      }
+
+      .controls__button {
+        font-size: 0.9rem;
+        padding: 10px;
+      }
+
+      .notification {
+        top: 10px;
+        right: 10px;
+        padding: 10px 20px;
+        font-size: 0.8rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .sensor-data__item {
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .sensor-data__label,
+      .sensor-data__value {
+        font-size: 0.9rem;
+      }
+    }
+  </style>
+</head>
+<body class="theme--light">
+  <header class="header">
+    <div class="header__content">
+      <div style="display: flex; align-items: center; gap: 5px;">
+        <img src="../static/images/iu_logo.png" alt="IoT Logo" class="header__image" />
+        <div class="header__text">
+          <span class="header__title">IoT Control Dashboard</span>
+          <span class="header__subtitle">Smart Home Automation System</span>
+        </div>
+      </div>
+      <div class="header__actions">
+        <button class="theme-toggle" onclick="toggleTheme()">
+          <i class="fas fa-moon"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-content">
+    <div class="dashboard">
+      <div class="dashboard__header">
+        <h1 class="dashboard__title">Control Panel</h1>
+      </div>
+
+      <div class="sensor-data">
+        <div class="sensor-data__item">
+          <span class="sensor-data__label">
+            <i class="fas fa-thermometer-half"></i> Temperature
+          </span>
+          <span class="sensor-data__value" id="temperature">-- °C</span>
+        </div>
+        <div class="sensor-data__item">
+          <span class="sensor-data__label">
+            <i class="fas fa-tint"></i> Humidity
+          </span>
+          <span class="sensor-data__value" id="humidity">-- %</span>
+        </div>
+        <div class="sensor-data__item">
+          <span class="sensor-data__label">
+            <i class="fas fa-lightbulb"></i> Light Level
+          </span>
+          <span class="sensor-data__value" id="light">-- lx</span>
+        </div>
+      </div>
+
+      <div class="controls__section">
+        <h2 class="controls__section-title">LED Control</h2>
+        <div class="controls-grid">
+          <button class="controls__button" onclick="controlDevice('home/control', 'led1_on')">
+            <i class="fas fa-lightbulb"></i> LED ON
+          </button>
+          <button class="controls__button" onclick="controlDevice('home/control', 'led1_off')">
+            <i class="fas fa-lightbulb"></i> LED OFF
+          </button>
+        </div>
+        <div class="status" id="light-status">Status: Unknown</div>
+      </div>
+
+      <div class="controls__section">
+        <h2 class="controls__section-title">Fan Control</h2>
+        <div class="controls-grid">
+          <button class="controls__button" onclick="controlDevice('home/control', 'fan_on')">
+            <i class="fas fa-fan"></i> Fan ON
+          </button>
+          <button class="controls__button" onclick="controlDevice('home/control', 'fan_off')">
+            <i class="fas fa-fan"></i> Fan OFF
+          </button>
+        </div>
+        <div class="status" id="fan-status">Status: Unknown</div>
+      </div>
+
+      <div class="controls__section">
+        <h2 class="controls__section-title">DC Motor Control</h2>
+        <div class="controls-grid">
+          <button class="controls__button" onclick="controlDevice('home/control', 'motor_forward')">
+            <i class="fas fa-arrow-right"></i> Forward
+          </button>
+          <button class="controls__button" onclick="controlDevice('home/control', 'motor_stop')">
+            <i class="fas fa-stop"></i> Stop
+          </button>
+          <button class="controls__button" onclick="controlDevice('home/control', 'motor_backward')">
+            <i class="fas fa-arrow-left"></i> Backward
+          </button>
+        </div>
+        <div class="status" id="motor-status">Status: Unknown</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="notification" class="notification"></div>
+
+  <footer class="footer">
+    <p class="footer__text">
+      Developed by Ha Minh Tri (ITCSIU22194) under the supervision of M.Eng. Vo
+      Minh Thanh for the IoT Course, Semester 03, Academic Year 2024-2025.
+    </p>
+  </footer>
+
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle('theme--dark');
+      document.body.classList.toggle('theme--light');
+      const icon = document.querySelector('.theme-toggle i');
+      icon.classList.toggle('fa-moon');
+      icon.classList.toggle('fa-sun');
+    }
+
+    function showNotification(message, type) {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.className = `notification ${type} show`;
+      setTimeout(() => {
+        notification.className = 'notification';
+      }, 3000);
+    }
+
+    function controlDevice(topic, command) {
+      fetch('/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, command })
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'success') {
+            showNotification(`Command ${command} sent successfully!`, 'success');
+            loadInitialData();
+          } else {
+            showNotification(`Error: ${data.message || 'Unknown error'}`, 'error');
+          }
+        })
+        .catch(error => {
+          showNotification(`Network error: ${error.message}`, 'error');
+          console.error('Error controlling device:', error);
+        });
+    }
+
+    function loadInitialData() {
+      fetch('/initial_data')
+        .then(response => response.json())
+        .then(data => {
+          if (data.status !== 'error') {
+            // Update sensor readings
+            document.getElementById('temperature').textContent = data.sensors.temperature ? `${data.sensors.temperature.toFixed(2)} °C` : '-- °C';
+            document.getElementById('humidity').textContent = data.sensors.humidity ? `${data.sensors.humidity.toFixed(2)} %` : '-- %';
+            document.getElementById('light').textContent = data.sensors.light ? `${data.sensors.light.toFixed(2)} lx` : '-- lx';
+            
+            // Update device statuses
+            document.getElementById('light-status').textContent = `Status: ${data.devices.led_status}`;
+            document.getElementById('fan-status').textContent = `Status: ${data.devices.fan_status}`;
+            document.getElementById('motor-status').textContent = `Status: ${data.devices.motor_status}`;
+          } else {
+            showNotification(`Error fetching initial data: ${data.message}`, 'error');
+          }
+        })
+        .catch(error => {
+          showNotification(`Network error fetching initial data: ${error.message}`, 'error');
+          console.error('Error loading initial data:', error);
+        });
+    }
+
+    // WebSocket for real-time updates
+    const ws = new WebSocket('ws://' + window.location.hostname + ':5001/ws');
+    ws.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+      
+      // Update sensor readings
+      if (data.sensors) {
+        document.getElementById('temperature').textContent = data.sensors.temperature ? `${data.sensors.temperature.toFixed(2)} °C` : '-- °C';
+        document.getElementById('humidity').textContent = data.sensors.humidity ? `${data.sensors.humidity.toFixed(2)} %` : '-- %';
+        document.getElementById('light').textContent = data.sensors.light ? `${data.sensors.light.toFixed(2)} lx` : '-- lx';
+      }
+      
+      // Update device statuses
+      if (data.devices) {
+        document.getElementById('light-status').textContent = `Status: ${data.devices.led_status}`;
+        document.getElementById('fan-status').textContent = `Status: ${data.devices.fan_status}`;
+        document.getElementById('motor-status').textContent = `Status: ${data.devices.motor_status}`;
+      }
+    };
+
+    // Call loadInitialData when the page loads
+    window.onload = loadInitialData;
+
+    // Capitalize helper for motor status
+    String.prototype.capitalize = function() {
+      return this.charAt(0).toUpperCase() + this.slice(1);
+    };
+  </script>
+</body>
+</html>
