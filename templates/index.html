@@ -6,6 +6,7 @@
   <title>IoT Control Dashboard</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
   <link rel="icon" href="../static/images/iu_logo.png">
   <style>
     * {
@@ -460,7 +461,6 @@
         .then(data => {
           if (data.status === 'success') {
             showNotification(`Command ${command} sent successfully!`, 'success');
-            loadInitialData();
           } else {
             showNotification(`Error: ${data.message || 'Unknown error'}`, 'error');
           }
@@ -495,11 +495,19 @@
         });
     }
 
-    // WebSocket for real-time updates
-    const ws = new WebSocket('ws://' + window.location.hostname + ':5001/ws');
-    ws.onmessage = function(event) {
-      const data = JSON.parse(event.data);
-      
+    // SocketIO with reconnection logic
+    const socket = io('http://' + window.location.hostname + ':5001', {
+      reconnection: true,
+      reconnectionDelay: 5000,
+      reconnectionAttempts: Infinity
+    });
+
+    socket.on('connect', function() {
+      console.log('SocketIO connected');
+      showNotification('WebSocket connected', 'success');
+    });
+
+    socket.on('update', function(data) {
       // Update sensor readings
       if (data.sensors) {
         document.getElementById('temperature').textContent = data.sensors.temperature ? `${data.sensors.temperature.toFixed(2)} °C` : '-- °C';
@@ -509,14 +517,44 @@
       
       // Update device statuses
       if (data.devices) {
-        document.getElementById('light-status').textContent = `Status: ${data.devices.led_status}`;
-        document.getElementById('fan-status').textContent = `Status: ${data.devices.fan_status}`;
-        document.getElementById('motor-status').textContent = `Status: ${data.devices.motor_status}`;
+        if (data.devices.led_status) {
+          document.getElementById('light-status').textContent = `Status: ${data.devices.led_status}`;
+        }
+        if (data.devices.fan_status) {
+          document.getElementById('fan-status').textContent = `Status: ${data.devices.fan_status}`;
+        }
+        if (data.devices.motor_status) {
+          document.getElementById('motor-status').textContent = `Status: ${data.devices.motor_status}`;
+        }
       }
-    };
+    });
 
-    // Call loadInitialData when the page loads
-    window.onload = loadInitialData;
+    socket.on('notification', function(data) {
+      if (data.notification) {
+        showNotification(data.notification, 'success');
+      }
+    });
+
+    socket.on('disconnect', function() {
+      console.log('SocketIO disconnected. Reconnecting...');
+      showNotification('WebSocket disconnected. Reconnecting...', 'error');
+    });
+
+    socket.on('connect_error', function(error) {
+      console.error('SocketIO error:', error);
+      showNotification('WebSocket error occurred', 'error');
+    });
+
+    // Polling fallback
+    function pollData() {
+      loadInitialData();
+    }
+
+    // Initialize
+    window.onload = function() {
+      loadInitialData();
+      setInterval(pollData, 5000); // Poll every 5 seconds
+    };
 
     // Capitalize helper for motor status
     String.prototype.capitalize = function() {

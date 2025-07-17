@@ -1,18 +1,18 @@
-import tkinter as tk
-from tkinter import ttk
 import paho.mqtt.client as mqtt
 import random
 import time
 import threading
 from flask import Flask, render_template, request, jsonify
-from flask_sockets import Sockets
+from flask_socketio import SocketIO, emit
 import json
 import logging
 import sqlite3
+from datetime import datetime
 
 # Flask app setup
 app = Flask(__name__)
-sockets = Sockets(app)
+app.config['SECRET_KEY'] = 'secret!'  # Required for SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,15 +22,12 @@ broker = "iot-dashboard.cloud.shiftr.io"
 port = 1883
 username = "iot-dashboard"
 password = "YBxsZiVmkHljoCId"
-client_id = f"iot-gui-08122004-{random.randint(0, 1000)}"
-client = mqtt.Client(client_id=client_id)
-
-# WebSocket clients
-ws_clients = []
+client_id = f"iot-gui-08122004-{random.randint(0, 1000)}"  # Unique client ID
+client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)  # Explicitly use MQTTv3.1.1
 
 # Database connection
 def get_db_connection():
-    conn = sqlite3.connect(r'D:\IoT_ITCSIU22194_Midterm\iot_data.db', timeout=10)
+    conn = sqlite3.connect(r'D:\IoT_ITCSIU22194_Midterm\iot_data.db', timeout=20)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -74,53 +71,55 @@ def get_latest_device_statuses():
         return None
 
 # MQTT callbacks
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    if reason_code == 0:
         logging.info("Connected to MQTT Broker!")
         client.subscribe("home/sensors", qos=1)
         client.subscribe("home/control", qos=1)
     else:
-        logging.error(f"Failed to connect, return code {rc}")
+        logging.error(f"Failed to connect, return code {reason_code}")
 
 def on_message(client, userdata, msg):
     topic = msg.topic
     payload = msg.payload.decode()
     logging.info(f"Received {payload} from {topic}")
 
-    # Update Tkinter GUI
+    message = {}
     if topic == "home/sensors":
         try:
             humidity, temperature, light = map(float, payload.split(","))
-            temp_label.config(text=f"Temperature: {temperature:.2f} °C")
-            humidity_label.config(text=f"Humidity: {humidity:.2f} %")
-            light_label.config(text=f"Light: {light:.2f} lx")
+            store_sensor_data(humidity, temperature, light)
+            message['sensors'] = {
+                'humidity': humidity,
+                'temperature': temperature,
+                'light': light
+            }
         except Exception as e:
-            logging.error(f"Error processing sensor data: {e}")
+            logging.error(f"Error parsing sensor data: {e}")
+            return
     elif topic == "home/control":
-        if payload in ["led1_on", "led1_off"]:
-            light_status_label.config(text=f"LED Status: {'ON' if payload == 'led1_on' else 'OFF'}")
-        elif payload in ["fan_on", "fan_off"]:
-            fan_status_label.config(text=f"Fan Status: {'ON' if payload == 'fan_on' else 'OFF'}")
-        elif payload in ["motor_forward", "motor_backward", "motor_stop"]:
-            motor_status_label.config(text=f"Motor Status: {payload.replace('motor_', '').capitalize()}")
+        try:
+            if payload in ["led1_on", "led1_off"]:
+                status = "ON" if payload == "led1_on" else "OFF"
+                store_light_status(payload, 1)
+                message['devices'] = {'led_status': status}
+            elif payload in ["fan_on", "fan_off"]:
+                status = "ON" if payload == "fan_on" else "OFF"
+                store_fan_status(payload.replace("fan_", ""))
+                message['devices'] = {'fan_status': status}
+            elif payload in ["motor_forward", "motor_backward", "motor_stop"]:
+                status = payload.replace("motor_", "").capitalize()
+                store_motor_status(status.lower())
+                message['devices'] = {'motor_status': status}
+        except Exception as e:
+            logging.error(f"Error parsing control data: {e}")
+            return
 
-    # Fetch latest data from database
-    sensor_data = get_latest_sensor_data()
-    device_statuses = get_latest_device_statuses()
+    # Broadcast to SocketIO clients
+    if message:
+        socketio.emit('update', message)
 
-    # Broadcast to WebSocket clients
-    if sensor_data and device_statuses:
-        message = {
-            'sensors': sensor_data,
-            'devices': device_statuses
-        }
-        for ws in ws_clients[:]:
-            try:
-                ws.send(json.dumps(message))
-            except Exception:
-                ws_clients.remove(ws)
-
-# Simulate sensor data (for testing)
+# Simulate sensor data
 def simulate_sensors():
     while True:
         temp = round(random.uniform(20.0, 30.0), 2)
@@ -131,57 +130,10 @@ def simulate_sensors():
         try:
             client.publish("home/sensors", payload, qos=1)
             logging.info(f"Published sensor data: {payload}")
+            socketio.emit('notification', {'notification': 'New sensor data generated'})
         except Exception as e:
             logging.error(f"Error publishing sensor data: {e}")
-        time.sleep(5)
-
-# Tkinter GUI setup
-root = tk.Tk()
-root.title("IoT Simulator")
-root.geometry("600x400")
-
-# Sensor display
-sensor_frame = ttk.LabelFrame(root, text="Sensor Readings", padding=10)
-sensor_frame.pack(padx=10, pady=10, fill="x")
-
-temp_label = ttk.Label(sensor_frame, text="Temperature: -- °C")
-temp_label.pack(pady=5)
-humidity_label = ttk.Label(sensor_frame, text="Humidity: -- %")
-humidity_label.pack(pady=5)
-light_label = ttk.Label(sensor_frame, text="Light: -- lx")
-light_label.pack(pady=5)
-
-# Device control
-device_frame = ttk.LabelFrame(root, text="Device Controls", padding=10)
-device_frame.pack(padx=10, pady=10, fill="x")
-
-# LED controls
-led_frame = ttk.Frame(device_frame)
-led_frame.pack(pady=5, fill="x")
-ttk.Label(led_frame, text="LED Control").pack(side="left")
-light_status_label = ttk.Label(led_frame, text="LED Status: Unknown")
-light_status_label.pack(side="right")
-ttk.Button(led_frame, text="ON", command=lambda: client.publish("home/control", "led1_on", qos=1)).pack(side="left", padx=5)
-ttk.Button(led_frame, text="OFF", command=lambda: client.publish("home/control", "led1_off", qos=1)).pack(side="left", padx=5)
-
-# Fan controls
-fan_frame = ttk.Frame(device_frame)
-fan_frame.pack(pady=5, fill="x")
-ttk.Label(fan_frame, text="Fan Control").pack(side="left")
-fan_status_label = ttk.Label(fan_frame, text="Fan Status: Unknown")
-fan_status_label.pack(side="right")
-ttk.Button(fan_frame, text="ON", command=lambda: client.publish("home/control", "fan_on", qos=1)).pack(side="left", padx=5)
-ttk.Button(fan_frame, text="OFF", command=lambda: client.publish("home/control", "fan_off", qos=1)).pack(side="left", padx=5)
-
-# Motor controls
-motor_frame = ttk.Frame(device_frame)
-motor_frame.pack(pady=5, fill="x")
-ttk.Label(motor_frame, text="Motor Control").pack(side="left")
-motor_status_label = ttk.Label(motor_frame, text="Motor Status: Unknown")
-motor_status_label.pack(side="right")
-ttk.Button(motor_frame, text="Forward", command=lambda: client.publish("home/control", "motor_forward", qos=1)).pack(side="left", padx=5)
-ttk.Button(motor_frame, text="Stop", command=lambda: client.publish("home/control", "motor_stop", qos=1)).pack(side="left", padx=5)
-ttk.Button(motor_frame, text="Backward", command=lambda: client.publish("home/control", "motor_backward", qos=1)).pack(side="left", padx=5)
+        time.sleep(2)
 
 # Flask routes
 @app.route('/')
@@ -214,15 +166,15 @@ def control():
             return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error", "message": "Invalid command or topic"}), 400
 
-@sockets.route('/ws')
-def websocket(ws):
-    ws_clients.append(ws)
-    while not ws.closed:
-        try:
-            ws.receive()
-        except Exception:
-            ws_clients.remove(ws)
-            break
+# SocketIO event handlers
+@socketio.on('connect')
+def handle_connect():
+    logging.info("SocketIO client connected")
+    emit('notification', {'notification': 'WebSocket connected'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    logging.info("SocketIO client disconnected")
 
 # Start MQTT client
 client.on_connect = on_connect
@@ -240,8 +192,5 @@ threading.Thread(target=simulate_sensors, daemon=True).start()
 
 # Run Flask app
 if __name__ == '__main__':
-    from gevent import pywsgi
-    from geventwebsocket.handler import WebSocketHandler
     logging.info("Starting Flask server on http://127.0.0.1:5001")
-    server = pywsgi.WSGIServer(('', 5001), app, handler_class=WebSocketHandler)
-    server.serve_forever()
+    socketio.run(app, host='0.0.0.0', port=5001, debug=False)
