@@ -4,14 +4,12 @@ import time
 import threading
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
-import json
 import logging
 import sqlite3
-from datetime import datetime
 
 # Flask app setup
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'  # Required for SocketIO
+app.config['SECRET_KEY'] = '2AHJXumAL6LljeqHZsJM_2GNrZduTwyMZexMaFNzyHo'  # Required for SocketIO
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Configure logging
@@ -22,8 +20,13 @@ broker = "iot-dashboard.cloud.shiftr.io"
 port = 1883
 username = "iot-dashboard"
 password = "YBxsZiVmkHljoCId"
-client_id = f"iot-gui-08122004-{random.randint(0, 1000)}"  # Unique client ID
-client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)  # Explicitly use MQTTv3.1.1
+client_id = f"iot-gui-08122004-{random.randint(0, 1000)}"
+client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)
+
+# Mock data simulation control
+is_simulating = False
+simulation_event = threading.Event()
+simulation_thread = None
 
 # Database connection
 def get_db_connection():
@@ -74,8 +77,12 @@ def get_latest_device_statuses():
 def on_connect(client, userdata, flags, reason_code, properties=None):
     if reason_code == 0:
         logging.info("Connected to MQTT Broker!")
-        client.subscribe("home/sensors", qos=1)
-        client.subscribe("home/control", qos=1)
+        client.subscribe("home/sensors/temperature", qos=1)
+        client.subscribe("home/sensors/humidity", qos=1)
+        client.subscribe("home/sensors/light", qos=1)
+        client.subscribe("home/control/light", qos=1)
+        client.subscribe("home/control/fan", qos=1)
+        client.subscribe("home/control/motor", qos=1)
     else:
         logging.error(f"Failed to connect, return code {reason_code}")
 
@@ -85,51 +92,40 @@ def on_message(client, userdata, msg):
     logging.info(f"Received {payload} from {topic}")
 
     message = {}
-    if topic == "home/sensors":
-        try:
-            humidity, temperature, light = map(float, payload.split(","))
-            store_sensor_data(humidity, temperature, light)
-            message['sensors'] = {
-                'humidity': humidity,
-                'temperature': temperature,
-                'light': light
-            }
-        except Exception as e:
-            logging.error(f"Error parsing sensor data: {e}")
-            return
-    elif topic == "home/control":
-        try:
-            if payload in ["led1_on", "led1_off"]:
-                status = "ON" if payload == "led1_on" else "OFF"
-                store_light_status(payload, 1)
-                message['devices'] = {'led_status': status}
-            elif payload in ["fan_on", "fan_off"]:
-                status = "ON" if payload == "fan_on" else "OFF"
-                store_fan_status(payload.replace("fan_", ""))
-                message['devices'] = {'fan_status': status}
-            elif payload in ["motor_forward", "motor_backward", "motor_stop"]:
-                status = payload.replace("motor_", "").capitalize()
-                store_motor_status(status.lower())
-                message['devices'] = {'motor_status': status}
-        except Exception as e:
-            logging.error(f"Error parsing control data: {e}")
-            return
+    try:
+        if topic == "home/sensors/temperature":
+            message['sensors'] = {'temperature': float(payload)}
+        elif topic == "home/sensors/humidity":
+            message['sensors'] = {'humidity': float(payload)}
+        elif topic == "home/sensors/light":
+            message['sensors'] = {'light': float(payload)}
+        elif topic == "home/control/light":
+            status = payload.upper()
+            message['devices'] = {'led_status': status}
+        elif topic == "home/control/fan":
+            status = payload.upper()
+            message['devices'] = {'fan_status': status}
+        elif topic == "home/control/motor":
+            status = payload.capitalize()
+            message['devices'] = {'motor_status': status}
 
-    # Broadcast to SocketIO clients
-    if message:
-        socketio.emit('update', message)
+        if message:
+            socketio.emit('update', message)
+    except Exception as e:
+        logging.error(f"Error processing message from {topic}: {e}")
 
 # Simulate sensor data
 def simulate_sensors():
-    while True:
+    while simulation_event.is_set():
         temp = round(random.uniform(20.0, 30.0), 2)
         humidity = round(random.uniform(40.0, 80.0), 2)
         light = round(random.uniform(100, 1000), 2)
         
-        payload = f"{humidity},{temp},{light}"
         try:
-            client.publish("home/sensors", payload, qos=1)
-            logging.info(f"Published sensor data: {payload}")
+            client.publish("home/sensors/temperature", str(temp), qos=1)
+            client.publish("home/sensors/humidity", str(humidity), qos=1)
+            client.publish("home/sensors/light", str(light), qos=1)
+            logging.info(f"Published sensor data: T={temp}, H={humidity}, L={light}")
             socketio.emit('notification', {'notification': 'New sensor data generated'})
         except Exception as e:
             logging.error(f"Error publishing sensor data: {e}")
@@ -156,21 +152,49 @@ def control():
     data = request.get_json()
     topic = data.get('topic')
     command = data.get('command')
-    if topic == "home/control" and command in ["led1_on", "led1_off", "fan_on", "fan_off", "motor_forward", "motor_stop", "motor_backward"]:
+    valid_commands = {
+        'home/control/light': ['ON', 'OFF'],
+        'home/control/fan': ['ON', 'OFF'],
+        'home/control/motor': ['FORWARD', 'BACKWARD', 'STOP']
+    }
+    if topic in valid_commands and command in valid_commands[topic]:
         try:
             client.publish(topic, command, qos=1)
-            logging.info(f"Published control command: {command}")
+            logging.info(f"Published control command: {command} to {topic}")
             return jsonify({"status": "success"})
         except Exception as e:
             logging.error(f"Error publishing control command: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error", "message": "Invalid command or topic"}), 400
 
+@app.route('/toggle_mock_data', methods=['POST'])
+def toggle_mock_data():
+    global is_simulating, simulation_thread
+    try:
+        if is_simulating:
+            simulation_event.clear()
+            is_simulating = False
+            socketio.emit('mock_data_status', {'is_running': False})
+            logging.info("Mock data simulation stopped")
+            return jsonify({"status": "success", "is_running": False})
+        else:
+            simulation_event.set()
+            simulation_thread = threading.Thread(target=simulate_sensors, daemon=True)
+            simulation_thread.start()
+            is_simulating = True
+            socketio.emit('mock_data_status', {'is_running': True})
+            logging.info("Mock data simulation started")
+            return jsonify({"status": "success", "is_running": True})
+    except Exception as e:
+        logging.error(f"Error toggling mock data: {e}")
+        return jsonify({"status": "error", "message leverages": str(e)}), 500
+
 # SocketIO event handlers
 @socketio.on('connect')
 def handle_connect():
     logging.info("SocketIO client connected")
     emit('notification', {'notification': 'WebSocket connected'})
+    emit('mock_data_status', {'is_running': is_simulating})
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -186,9 +210,6 @@ try:
     logging.info("MQTT client started")
 except Exception as e:
     logging.error(f"MQTT connection failed: {e}")
-
-# Start sensor simulation in a separate thread
-threading.Thread(target=simulate_sensors, daemon=True).start()
 
 # Run Flask app
 if __name__ == '__main__':

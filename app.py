@@ -5,7 +5,6 @@ import threading
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import logging
-import sqlite3
 
 # Flask app setup
 app = Flask(__name__)
@@ -23,50 +22,10 @@ password = "YBxsZiVmkHljoCId"
 client_id = f"iot-gui-08122004-{random.randint(0, 1000)}"
 client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)
 
-# Database connection
-def get_db_connection():
-    conn = sqlite3.connect(r'D:\IoT_ITCSIU22194_Midterm\iot_data.db', timeout=20)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-# Database query functions
-def get_latest_sensor_data():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT humidity, temperature FROM temperature_humidity_data ORDER BY id DESC LIMIT 1")
-        temp_hum = cursor.fetchone()
-        cursor.execute("SELECT light_level FROM light_sensor_data ORDER BY id DESC LIMIT 1")
-        light = cursor.fetchone()
-        conn.close()
-        return {
-            'humidity': temp_hum['humidity'] if temp_hum else None,
-            'temperature': temp_hum['temperature'] if temp_hum else None,
-            'light': light['light_level'] if light else None
-        }
-    except Exception as e:
-        logging.error(f"Error fetching sensor data: {e}")
-        return None
-
-def get_latest_device_statuses():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT status FROM relay_lights_status WHERE device_id = 1 ORDER BY id DESC LIMIT 1")
-        led_status = cursor.fetchone()
-        cursor.execute("SELECT status FROM relay_fans_status WHERE device_id = 6 ORDER BY id DESC LIMIT 1")
-        fan_status = cursor.fetchone()
-        cursor.execute("SELECT direction FROM dc_motor_status WHERE device_id = 3 ORDER BY id DESC LIMIT 1")
-        motor_status = cursor.fetchone()
-        conn.close()
-        return {
-            'led_status': 'ON' if led_status and led_status['status'] == 1 else 'OFF',
-            'fan_status': 'ON' if fan_status and fan_status['status'] == 1 else 'OFF',
-            'motor_status': motor_status['direction'].capitalize() if motor_status else 'Unknown'
-        }
-    except Exception as e:
-        logging.error(f"Error fetching device statuses: {e}")
-        return None
+# Mock data simulation control
+is_simulating = False
+simulation_event = threading.Event()
+simulation_thread = None
 
 # MQTT callbacks
 def on_connect(client, userdata, flags, reason_code, properties=None):
@@ -111,7 +70,7 @@ def on_message(client, userdata, msg):
 
 # Simulate sensor data
 def simulate_sensors():
-    while True:
+    while simulation_event.is_set():
         temp = round(random.uniform(20.0, 30.0), 2)
         humidity = round(random.uniform(40.0, 80.0), 2)
         light = round(random.uniform(100, 1000), 2)
@@ -130,17 +89,6 @@ def simulate_sensors():
 @app.route('/')
 def index():
     return render_template('index.html')
-
-@app.route('/initial_data')
-def initial_data():
-    sensor_data = get_latest_sensor_data()
-    device_statuses = get_latest_device_statuses()
-    if sensor_data and device_statuses:
-        return jsonify({
-            'sensors': sensor_data,
-            'devices': device_statuses
-        })
-    return jsonify({'status': 'error', 'message': 'Failed to fetch data'}), 500
 
 @app.route('/control', methods=['POST'])
 def control():
@@ -162,11 +110,34 @@ def control():
             return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error", "message": "Invalid command or topic"}), 400
 
+@app.route('/toggle_mock_data', methods=['POST'])
+def toggle_mock_data():
+    global is_simulating, simulation_thread
+    try:
+        if is_simulating:
+            simulation_event.clear()
+            is_simulating = False
+            socketio.emit('mock_data_status', {'is_running': False})
+            logging.info("Mock data simulation stopped")
+            return jsonify({"status": "success", "is_running": False})
+        else:
+            simulation_event.set()
+            simulation_thread = threading.Thread(target=simulate_sensors, daemon=True)
+            simulation_thread.start()
+            is_simulating = True
+            socketio.emit('mock_data_status', {'is_running': True})
+            logging.info("Mock data simulation started")
+            return jsonify({"status": "success", "is_running": True})
+    except Exception as e:
+        logging.error(f"Error toggling mock data: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # SocketIO event handlers
 @socketio.on('connect')
 def handle_connect():
     logging.info("SocketIO client connected")
     emit('notification', {'notification': 'WebSocket connected'})
+    emit('mock_data_status', {'is_running': is_simulating})
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -182,9 +153,6 @@ try:
     logging.info("MQTT client started")
 except Exception as e:
     logging.error(f"MQTT connection failed: {e}")
-
-# Start sensor simulation in a separate thread
-threading.Thread(target=simulate_sensors, daemon=True).start()
 
 # Run Flask app
 if __name__ == '__main__':

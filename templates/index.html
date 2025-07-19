@@ -100,17 +100,20 @@
       gap: 8px;
     }
 
-    .theme-toggle {
+    .theme-toggle, .mock-data-toggle {
       background: none;
       border: none;
       cursor: pointer;
-      font-size: 1.2rem;
+      font-size: 1rem;
       color: #ffffff;
       padding: 8px;
       transition: opacity 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
 
-    .theme-toggle:hover {
+    .theme-toggle:hover, .mock-data-toggle:hover {
       opacity: 0.8;
     }
 
@@ -299,8 +302,8 @@
         gap: 4px;
       }
 
-      .theme-toggle {
-        font-size: 1rem;
+      .theme-toggle, .mock-data-toggle {
+        font-size: 0.9rem;
         padding: 6px;
       }
 
@@ -346,6 +349,9 @@
         </div>
       </div>
       <div class="header__actions">
+        <button class="mock-data-toggle" id="mock-data-toggle" onclick="toggleMockData()">
+          <i class="fas fa-play"></i> Start Mock Data
+        </button>
         <button class="theme-toggle" onclick="toggleTheme()">
           <i class="fas fa-moon"></i>
         </button>
@@ -434,12 +440,38 @@
   </footer>
 
   <script>
+    let isMockDataRunning = false;
+
     function toggleTheme() {
       document.body.classList.toggle('theme--dark');
       document.body.classList.toggle('theme--light');
       const icon = document.querySelector('.theme-toggle i');
       icon.classList.toggle('fa-moon');
       icon.classList.toggle('fa-sun');
+    }
+
+    function toggleMockData() {
+      fetch('/toggle_mock_data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'success') {
+            isMockDataRunning = data.is_running;
+            const button = document.getElementById('mock-data-toggle');
+            button.innerHTML = isMockDataRunning
+              ? '<i class="fas fa-stop"></i> Stop Mock Data'
+              : '<i class="fas fa-play"></i> Start Mock Data';
+            showNotification(`Mock data ${isMockDataRunning ? 'started' : 'stopped'}`, 'success');
+          } else {
+            showNotification(`Error: ${data.message || 'Unknown error'}`, 'error');
+          }
+        })
+        .catch(error => {
+          showNotification(`Network error: ${error.message}`, 'error');
+          console.error('Error toggling mock data:', error);
+        });
     }
 
     function showNotification(message, type) {
@@ -468,30 +500,6 @@
         .catch(error => {
           showNotification(`Network error: ${error.message}`, 'error');
           console.error('Error controlling device:', error);
-        });
-    }
-
-    function loadInitialData() {
-      fetch('/initial_data')
-        .then(response => response.json())
-        .then(data => {
-          if (data.status !== 'error') {
-            // Update sensor readings
-            document.getElementById('temperature').textContent = data.sensors.temperature ? `${data.sensors.temperature.toFixed(2)} °C` : '-- °C';
-            document.getElementById('humidity').textContent = data.sensors.humidity ? `${data.sensors.humidity.toFixed(2)} %` : '-- %';
-            document.getElementById('light').textContent = data.sensors.light ? `${data.sensors.light.toFixed(2)} lx` : '-- lx';
-            
-            // Update device statuses
-            document.getElementById('light-status').textContent = `Status: ${data.devices.led_status}`;
-            document.getElementById('fan-status').textContent = `Status: ${data.devices.fan_status}`;
-            document.getElementById('motor-status').textContent = `Status: ${data.devices.motor_status}`;
-          } else {
-            showNotification(`Error fetching initial data: ${data.message}`, 'error');
-          }
-        })
-        .catch(error => {
-          showNotification(`Network error fetching initial data: ${error.message}`, 'error');
-          console.error('Error loading initial data:', error);
         });
     }
 
@@ -541,6 +549,14 @@
       }
     });
 
+    socket.on('mock_data_status', function(data) {
+      isMockDataRunning = data.is_running;
+      const button = document.getElementById('mock-data-toggle');
+      button.innerHTML = isMockDataRunning
+        ? '<i class="fas fa-stop"></i> Stop Mock Data'
+        : '<i class="fas fa-play"></i> Start Mock Data';
+    });
+
     socket.on('disconnect', function() {
       console.log('SocketIO disconnected. Reconnecting...');
       showNotification('WebSocket disconnected. Reconnecting...', 'error');
@@ -550,17 +566,6 @@
       console.error('SocketIO error:', error);
       showNotification('WebSocket error occurred', 'error');
     });
-
-    // Polling fallback
-    function pollData() {
-      loadInitialData();
-    }
-
-    // Initialize
-    window.onload = function() {
-      loadInitialData();
-      setInterval(pollData, 5000); // Poll every 5 seconds
-    };
 
     // Capitalize helper for motor status
     String.prototype.capitalize = function() {
