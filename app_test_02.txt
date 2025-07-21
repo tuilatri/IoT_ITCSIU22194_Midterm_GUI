@@ -5,9 +5,6 @@ import random
 import time
 import threading
 import logging
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
 from collections import deque
 import datetime
 from PIL import Image, ImageTk
@@ -29,7 +26,7 @@ is_simulating = False
 simulation_event = threading.Event()
 simulation_thread = None
 
-# Data storage for graphs
+# Data storage
 sensor_data = {
     'temperature': {'values': deque(maxlen=50), 'times': deque(maxlen=50)},
     'humidity': {'values': deque(maxlen=50), 'times': deque(maxlen=50)},
@@ -47,7 +44,7 @@ class IoTSimulatorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("IoT Control Dashboard")
-        self.root.geometry("685x900")
+        self.root.geometry("685x500")
         self.root.configure(bg="#f8f9fa")
         self.root.resizable(False, True)
         
@@ -61,7 +58,6 @@ class IoTSimulatorGUI:
         self.card_color = "#ffffff"
         
         self.create_widgets()
-        self.setup_graphs()
         self.is_connected = False
         
     def create_widgets(self):
@@ -97,7 +93,6 @@ class IoTSimulatorGUI:
         self.create_broker_config()
         self.create_sensor_controls()
         self.create_device_controls()
-        self.create_graphs()
         self.create_console()
         self.create_footer()
         
@@ -296,115 +291,6 @@ class IoTSimulatorGUI:
         tk.Button(motor_frame, text="Backward", font=("Arial", 8), bg=self.warning_color, fg="white", 
                  relief="flat", width=8, command=lambda: self.control_device("home/control/motor", "BACKWARD")).pack(side="left", padx=2)
     
-    def create_graphs(self):
-        sensor_graph_frame = self.create_card("Sensor Data Visualization")
-        self.sensor_graph_container = sensor_graph_frame
-        
-        device_graph_frame = self.create_card("Device States Visualization")
-        self.device_graph_container = device_graph_frame
-        
-    def setup_graphs(self):
-        self.sensor_fig = Figure(figsize=(7.5, 5), dpi=80, facecolor='white')
-        self.device_fig = Figure(figsize=(7.5, 7), dpi=80, facecolor='white')
-        
-        self.ax1 = self.sensor_fig.add_subplot(311)  # Temperature
-        self.ax2 = self.sensor_fig.add_subplot(312)  # Humidity
-        self.ax3 = self.sensor_fig.add_subplot(313)  # Light
-        
-        self.ax4 = self.device_fig.add_subplot(311)  # Light
-        self.ax5 = self.device_fig.add_subplot(312)  # Fan
-        self.ax6 = self.device_fig.add_subplot(313)  # Motor
-        
-        self.sensor_fig.tight_layout(pad=2.0)
-        self.device_fig.tight_layout(pad=2.0)
-        
-        self.sensor_canvas = FigureCanvasTkAgg(self.sensor_fig, self.sensor_graph_container)
-        self.sensor_canvas.draw()
-        self.sensor_canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=5)
-        
-        self.device_canvas = FigureCanvasTkAgg(self.device_fig, self.device_graph_container)
-        self.device_canvas.draw()
-        self.device_canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=5)
-        
-        self.update_graphs()
-        
-    def update_graphs(self):
-        try:
-            self.ax1.clear()
-            self.ax2.clear()
-            self.ax3.clear()
-            self.ax4.clear()
-            self.ax5.clear()
-            self.ax6.clear()
-            
-            # Temperature graph
-            if sensor_data['temperature']['values']:
-                self.ax1.plot(list(sensor_data['temperature']['times']), 
-                             list(sensor_data['temperature']['values']), 'r-', linewidth=2)
-                self.ax1.set_title('Temperature (°C)', fontsize=10)
-                self.ax1.grid(True, alpha=0.3)
-                
-            # Humidity graph
-            if sensor_data['humidity']['values']:
-                self.ax2.plot(list(sensor_data['humidity']['times']), 
-                             list(sensor_data['humidity']['values']), 'b-', linewidth=2)
-                self.ax2.set_title('Humidity (%)', fontsize=10)
-                self.ax2.grid(True, alpha=0.3)
-                
-            # Light graph
-            if sensor_data['light']['values']:
-                self.ax3.plot(list(sensor_data['light']['times']), 
-                             list(sensor_data['light']['values']), 'y-', linewidth=2)
-                self.ax3.set_title('Light Level (lx)', fontsize=10)
-                self.ax3.grid(True, alpha=0.3)
-                
-            # Light state graph (stepped)
-            if device_states['light']['values']:
-                times = list(device_states['light']['times'])
-                values = [1 if v == 'ON' else 0 for v in device_states['light']['values']]
-                self.ax4.step(times, values, 'g-', where='post', linewidth=2)
-                self.ax4.set_title('Light State', fontsize=10)
-                self.ax4.set_ylim(-0.1, 1.1)
-                self.ax4.set_yticks([0, 1])
-                self.ax4.set_yticklabels(['OFF', 'ON'])
-                self.ax4.grid(True, alpha=0.3)
-                
-            # Fan state graph (stepped)
-            if device_states['fan']['values']:
-                times = list(device_states['fan']['times'])
-                values = [1 if v == 'ON' else 0 for v in device_states['fan']['values']]
-                self.ax5.step(times, values, 'm-', where='post', linewidth=2)
-                self.ax5.set_title('Fan State', fontsize=10)
-                self.ax5.set_ylim(-0.1, 1.1)
-                self.ax5.set_yticks([0, 1])
-                self.ax5.set_yticklabels(['OFF', 'ON'])
-                self.ax5.grid(True, alpha=0.3)
-                
-            # Motor state graph (stepped)
-            if device_states['motor']['values']:
-                times = list(device_states['motor']['times'])
-                values = [1 if v == 'FORWARD' else -1 if v == 'BACKWARD' else 0 for v in device_states['motor']['values']]
-                self.ax6.step(times, values, 'c-', where='post', linewidth=2)
-                self.ax6.set_title('Motor State', fontsize=10)
-                self.ax6.set_ylim(-1.1, 1.1)
-                self.ax6.set_yticks([-1, 0, 1])
-                self.ax6.set_yticklabels(['BACKWARD', 'STOP', 'FORWARD'])
-                self.ax6.grid(True, alpha=0.3)
-            
-            for ax in [self.ax1, self.ax2, self.ax3, self.ax4, self.ax5, self.ax6]:
-                ax.tick_params(axis='x', labelsize=8, rotation=45)
-                ax.tick_params(axis='y', labelsize=8)
-            
-            self.sensor_fig.tight_layout(pad=1.5)
-            self.device_fig.tight_layout(pad=1.5)
-            self.sensor_canvas.draw()
-            self.device_canvas.draw()
-            
-        except Exception as e:
-            print(f"Graph update error: {e}")
-        
-        self.root.after(2000, self.update_graphs)
-        
     def create_console(self):
         console_frame = self.create_card("Console Log")
         
@@ -634,7 +520,7 @@ def simulate_sensors():
             logging.info(f"Published sensor data: T={temp}°C, H={humidity}%, L={light}lx")
         except Exception as e:
             logging.error(f"Error publishing sensor data: {e}")
-        time.sleep(2)
+        time.sleep(5)
 
 # Main execution
 if __name__ == "__main__":
